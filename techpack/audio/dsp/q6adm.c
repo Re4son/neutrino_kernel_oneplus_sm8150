@@ -139,7 +139,7 @@ static int adm_get_parameters[MAX_COPPS_PER_PORT * ADM_GET_PARAMETER_LENGTH];
 static int adm_module_topo_list[MAX_COPPS_PER_PORT *
 				ADM_GET_TOPO_MODULE_INSTANCE_LIST_LENGTH];
 static struct mutex dts_srs_lock;
-static int *adm_session;
+static int adm_session[AFE_MAX_PORTS];
 
 void msm_dts_srs_acquire_lock(void)
 {
@@ -151,15 +151,59 @@ void msm_dts_srs_release_lock(void)
 	mutex_unlock(&dts_srs_lock);
 }
 
-void adm_alloc_types(void)
+void adm_reset_session_type(void)
 {
-	adm_session = kzalloc(AFE_MAX_PORTS, GFP_KERNEL);
+    int i;
+    for( i = 0; i < AFE_MAX_PORTS; i++)
+    {
+        adm_session[i] = 0;
+    }
 }
 
-void adm_free_types(void)
-{
-	kfree(adm_session);
-}
+struct adm_tuple {
+	int port_id;
+	int session_type;
+};
+
+static struct adm_tuple adm_port_ids[] = {
+	.{ AFE_PORT_ID_HDMI_OVER_DP_RX },
+	.{ AFE_PORT_ID_INT0_MI2S_RX },
+	.{ AFE_PORT_ID_INT3_MI2S_TX },
+	.{ AFE_PORT_ID_INT4_MI2S_RX },
+	.{ AFE_PORT_ID_PRIMARY_MI2S_RX },
+	.{ AFE_PORT_ID_PRIMARY_MI2S_TX },
+	.{ AFE_PORT_ID_QUATERNARY_MI2S_RX },
+	.{ AFE_PORT_ID_QUATERNARY_MI2S_TX },
+	.{ AFE_PORT_ID_QUATERNARY_TDM_RX },
+	.{ AFE_PORT_ID_QUATERNARY_TDM_RX_1 },
+	.{ AFE_PORT_ID_QUATERNARY_TDM_RX_2 },
+	.{ AFE_PORT_ID_QUATERNARY_TDM_TX_1 },
+	.{ AFE_PORT_ID_RX_CODEC_DMA_RX_0 },
+	.{ AFE_PORT_ID_RX_CODEC_DMA_RX_1 },
+	.{ AFE_PORT_ID_RX_CODEC_DMA_RX_2 },
+	.{ AFE_PORT_ID_RX_CODEC_DMA_RX_3 },
+	.{ AFE_PORT_ID_SECONDARY_MI2S_RX },
+	.{ AFE_PORT_ID_SECONDARY_MI2S_TX },
+	.{ AFE_PORT_ID_SECONDARY_TDM_TX },
+	.{ AFE_PORT_ID_TERTIARY_MI2S_RX },
+	.{ AFE_PORT_ID_TERTIARY_MI2S_TX },
+	.{ AFE_PORT_ID_TERTIARY_TDM_RX_2 },
+	.{ AFE_PORT_ID_TERTIARY_TDM_TX },
+	.{ AFE_PORT_ID_TX_CODEC_DMA_TX_0 },
+	.{ AFE_PORT_ID_USB_RX },
+	.{ AFE_PORT_ID_WSA_CODEC_DMA_RX_0 },
+	.{ AFE_PORT_ID_WSA_CODEC_DMA_RX_1 },
+	.{ AFE_PORT_ID_WSA_CODEC_DMA_TX_0 },
+	.{ AFE_PORT_ID_WSA_CODEC_DMA_TX_1 },
+	.{ AFE_PORT_ID_WSA_CODEC_DMA_TX_2 },
+	.{ AFE_PORT_INVALID },
+	.{ SLIMBUS_0_RX },
+	.{ SLIMBUS_1_TX },
+	.{ SLIMBUS_5_RX },
+	.{ SLIMBUS_6_RX },
+	.{ SLIMBUS_7_RX }
+};
+
 /**
  * adm_set_session_type -
  *        validate given port id
@@ -170,13 +214,43 @@ void adm_free_types(void)
  */
 void adm_set_session_type(int port_id, int session_type)
 {
-    adm_session[port_id] = session_type;
+	if (port_id < AFE_MAX_PORTS) {
+		adm_session[port_id] = session_type;
+	} else {
+		int i;
+
+		for (i = 0; i < ARRAY_SIZE(adm_port_ids); i++) {
+			struct adm_tuple *t = &adm_port_ids[i];
+
+			if (t->port_id == port_id) {
+				t->session_type = session_type;
+				break;
+			}
+		}
+
+		/* This means new values need to be added to adm_port_ids */
+		BUG_ON(i == ARRAY_SIZE(adm_port_ids));
+	}
 }
 EXPORT_SYMBOL(adm_set_session_type);
 
 int adm_get_session_type(int port_id)
 {
-    return adm_session[port_id];
+	int i;
+
+	if (port_id < AFE_MAX_PORTS)
+		return adm_session[port_id];
+
+	for (i = 0; i < ARRAY_SIZE(adm_port_ids); i++) {
+		struct adm_tuple *t = &adm_port_ids[i];
+
+		if (t->port_id == port_id)
+			return t->session_type;
+	}
+
+	/* This means new values need to be added to adm_port_ids */
+	BUG();
+	return 0;
 }
 
 /**
@@ -5185,7 +5259,7 @@ int __init adm_init(void)
 	this_adm.sourceTrackingData.memmap.kvaddr = NULL;
 	this_adm.sourceTrackingData.memmap.paddr = 0;
 	this_adm.sourceTrackingData.apr_cmd_status = -1;
-    adm_alloc_types();
+    adm_reset_session_type();
 	return 0;
 }
 
@@ -5193,7 +5267,5 @@ void adm_exit(void)
 {
 	if (this_adm.apr)
 		adm_reset_data();
-
-	adm_free_types();
 	adm_delete_cal_data();
 }
